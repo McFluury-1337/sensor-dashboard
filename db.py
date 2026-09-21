@@ -9,11 +9,11 @@ DEFAULT_THRESHOLDS = {
 }
 
 
-def get_connection(path=DB_PATH):
-    return sqlite3.connect(path)
+def get_connection(path=None):
+    return sqlite3.connect(path if path is not None else DB_PATH)
 
 
-def init_db(path=DB_PATH):
+def init_db(path=None):
     conn = get_connection(path)
     conn.execute(
         """
@@ -44,7 +44,7 @@ def init_db(path=DB_PATH):
     conn.close()
 
 
-def insert_reading(timestamp, temperature, pressure, vibration, path=DB_PATH):
+def insert_reading(timestamp, temperature, pressure, vibration, path=None):
     conn = get_connection(path)
     conn.execute(
         "INSERT INTO readings (timestamp, temperature, pressure, vibration) VALUES (?, ?, ?, ?)",
@@ -54,7 +54,7 @@ def insert_reading(timestamp, temperature, pressure, vibration, path=DB_PATH):
     conn.close()
 
 
-def get_latest_readings(limit=50, path=DB_PATH):
+def get_latest_readings(limit=50, path=None):
     conn = get_connection(path)
     cursor = conn.execute(
         "SELECT timestamp, temperature, pressure, vibration FROM readings ORDER BY id DESC LIMIT ?",
@@ -65,7 +65,7 @@ def get_latest_readings(limit=50, path=DB_PATH):
     return rows
 
 
-def get_all_readings(path=DB_PATH):
+def get_all_readings(path=None):
     conn = get_connection(path)
     cursor = conn.execute(
         "SELECT timestamp, temperature, pressure, vibration FROM readings ORDER BY id ASC"
@@ -75,7 +75,7 @@ def get_all_readings(path=DB_PATH):
     return rows
 
 
-def get_thresholds(path=DB_PATH):
+def get_thresholds(path=None):
     conn = get_connection(path)
     cursor = conn.execute("SELECT metric, warn_boundary, fault_boundary FROM thresholds")
     rows = cursor.fetchall()

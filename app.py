@@ -1,13 +1,18 @@
+import hmac
 import json
 import statistics as st
+from datetime import datetime
 
-from flask import Flask
+from flask import Flask, jsonify, request
 
+import config
 import db
 from preprocessing import normalize, standardize
 from state import classify_reading
 
 app = Flask(__name__)
+
+API_KEY = config.get("API_KEY")
 
 STATE_COLOR = {
     "норма": "green",
@@ -140,6 +145,59 @@ def index():
         }});
     </script>
     """
+
+
+def _valid_api_key():
+    provided = request.headers.get("X-API-Key", "")
+    return hmac.compare_digest(provided, API_KEY or "")
+
+
+def _parse_reading_payload(payload):
+    if not isinstance(payload, dict):
+        return None
+    try:
+        temperature = float(payload["temperature"])
+        pressure = float(payload["pressure"])
+        vibration = float(payload["vibration"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if temperature < 0 or pressure < 0 or vibration < 0:
+        return None
+    return temperature, pressure, vibration
+
+
+@app.route("/api/readings", methods=["POST"])
+def create_reading():
+    if not _valid_api_key():
+        return jsonify({"error": "unauthorized"}), 401
+
+    parsed = _parse_reading_payload(request.get_json(silent=True))
+    if parsed is None:
+        return jsonify({"error": "temperature, pressure and vibration must be non-negative numbers"}), 400
+
+    temperature, pressure, vibration = parsed
+    timestamp = datetime.now().isoformat()
+    db.insert_reading(timestamp, temperature, pressure, vibration)
+
+    return jsonify({
+        "timestamp": timestamp,
+        "temperature": temperature,
+        "pressure": pressure,
+        "vibration": vibration,
+    }), 201
+
+
+@app.route("/api/readings", methods=["GET"])
+def list_readings():
+    limit = request.args.get("limit", default=50, type=int)
+    if not limit or limit <= 0:
+        limit = 50
+
+    rows = db.get_latest_readings(limit)
+    return jsonify([
+        {"timestamp": timestamp, "temperature": t, "pressure": p, "vibration": v}
+        for timestamp, t, p, v in rows
+    ])
 
 
 if __name__ == "__main__":

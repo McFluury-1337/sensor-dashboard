@@ -1,7 +1,12 @@
+import json
 import random
-from datetime import datetime
+import urllib.error
+import urllib.request
 
-import db
+import config
+
+API_URL = config.get("API_URL", "http://127.0.0.1:5000")
+API_KEY = config.get("API_KEY")
 
 STATES = {
     "normal": {
@@ -33,14 +38,30 @@ def generate_reading():
     return temperature, pressure, vibration
 
 
+def send_reading(temperature, pressure, vibration):
+    payload = json.dumps({
+        "temperature": temperature,
+        "pressure": pressure,
+        "vibration": vibration,
+    }).encode()
+
+    request = urllib.request.Request(
+        f"{API_URL}/api/readings",
+        data=payload,
+        headers={"Content-Type": "application/json", "X-API-Key": API_KEY or ""},
+        method="POST",
+    )
+    with urllib.request.urlopen(request) as response:
+        return response.status, json.loads(response.read())
+
+
 def main():
-    db.init_db()
-
     temperature, pressure, vibration = generate_reading()
-    timestamp = datetime.now().isoformat()
-
-    db.insert_reading(timestamp, temperature, pressure, vibration)
-    print(f"{timestamp} temp={temperature:.2f} pressure={pressure:.2f} vibration={vibration:.2f}")
+    try:
+        status, body = send_reading(temperature, pressure, vibration)
+        print(status, body)
+    except urllib.error.HTTPError as error:
+        print(error.code, error.read().decode())
 
 
 if __name__ == "__main__":
