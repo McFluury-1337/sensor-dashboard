@@ -2,8 +2,10 @@ import hmac
 import json
 import statistics as st
 from datetime import datetime
+from functools import wraps
 
-from flask import Flask, jsonify, request
+from flask import Flask, flash, get_flashed_messages, jsonify, redirect, request, session, url_for
+from werkzeug.security import check_password_hash
 
 import config
 import db
@@ -11,6 +13,7 @@ from preprocessing import normalize, standardize
 from state import classify_reading
 
 app = Flask(__name__)
+app.secret_key = config.get("SECRET_KEY")
 
 API_KEY = config.get("API_KEY")
 
@@ -153,7 +156,7 @@ def _valid_api_key():
 
 
 def _parse_reading_payload(payload):
-    if not isinstance(payload, dict):
+    if payload is None:
         return None
     try:
         temperature = float(payload["temperature"])
@@ -198,6 +201,130 @@ def list_readings():
         {"timestamp": timestamp, "temperature": t, "pressure": p, "vibration": v}
         for timestamp, t, p, v in rows
     ])
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def _parse_thresholds_payload(form):
+    thresholds = {}
+    for metric in ("temperature", "pressure", "vibration"):
+        try:
+            warn = float(form[f"{metric}_warn"])
+            fault = float(form[f"{metric}_fault"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if warn < 0 or fault < 0 or warn >= fault:
+            return None
+        thresholds[metric] = (warn, fault)
+    return thresholds
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        password_hash = db.get_user(username)
+        if password_hash and check_password_hash(password_hash, password):
+            session["logged_in"] = True
+            session["username"] = username
+            return redirect(url_for("admin"))
+        flash("Неверный логин или пароль")
+
+    messages_html = "".join(f"<p>{message}</p>" for message in get_flashed_messages())
+
+    return f"""
+    <h1>Вход</h1>
+    {messages_html}
+    <form method="post">
+        <label>Логин: <input name="username"></label><br>
+        <label>Пароль: <input name="password" type="password"></label><br>
+        <button type="submit">Войти</button>
+    </form>
+    """
+
+
+@app.route("/admin/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/admin")
+@login_required
+def admin():
+    thresholds = db.get_thresholds()
+    messages_html = "".join(f"<p>{message}</p>" for message in get_flashed_messages())
+
+    threshold_rows_html = "".join(
+        f"""
+        <tr>
+            <td>{metric}</td>
+            <td><input name="{metric}_warn" value="{warn}"></td>
+            <td><input name="{metric}_fault" value="{fault}"></td>
+        </tr>
+        """
+        for metric, (warn, fault) in thresholds.items()
+    )
+
+    return f"""
+    <h1>Админка</h1>
+    <p><a href="{url_for('logout')}">Выйти</a> · <a href="{url_for('index')}">На главную</a></p>
+    {messages_html}
+
+    <h2>Ввести показание вручную</h2>
+    <form method="post" action="{url_for('admin_create_reading')}">
+        <label>Температура: <input name="temperature"></label><br>
+        <label>Давление: <input name="pressure"></label><br>
+        <label>Вибрация: <input name="vibration"></label><br>
+        <button type="submit">Добавить</button>
+    </form>
+
+    <h2>Пороги состояний</h2>
+    <form method="post" action="{url_for('admin_update_thresholds')}">
+        <table border="1">
+            <tr><th>Метрика</th><th>Предупреждение с</th><th>Неисправность с</th></tr>
+            {threshold_rows_html}
+        </table>
+        <button type="submit">Сохранить пороги</button>
+    </form>
+    """
+
+
+@app.route("/admin/readings", methods=["POST"])
+@login_required
+def admin_create_reading():
+    parsed = _parse_reading_payload(request.form)
+    if parsed is None:
+        flash("Показание не сохранено: значения должны быть неотрицательными числами")
+        return redirect(url_for("admin"))
+
+    temperature, pressure, vibration = parsed
+    timestamp = datetime.now().isoformat()
+    db.insert_reading(timestamp, temperature, pressure, vibration)
+    flash("Показание добавлено")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/thresholds", methods=["POST"])
+@login_required
+def admin_update_thresholds():
+    parsed = _parse_thresholds_payload(request.form)
+    if parsed is None:
+        flash("Пороги не сохранены: нужны неотрицательные числа, нижняя граница меньше верхней")
+        return redirect(url_for("admin"))
+
+    for metric, (warn, fault) in parsed.items():
+        db.update_threshold(metric, warn, fault)
+    flash("Пороги обновлены")
+    return redirect(url_for("admin"))
 
 
 if __name__ == "__main__":

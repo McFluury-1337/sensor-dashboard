@@ -1,5 +1,9 @@
 import sqlite3
 
+from werkzeug.security import generate_password_hash
+
+import config
+
 DB_PATH = "sensors.db"
 
 DEFAULT_THRESHOLDS = {
@@ -39,6 +43,22 @@ def init_db(path=None):
         conn.execute(
             "INSERT OR IGNORE INTO thresholds (metric, warn_boundary, fault_boundary) VALUES (?, ?, ?)",
             (metric, warn_boundary, fault_boundary),
+        )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL
+        )
+        """
+    )
+    user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    admin_password = config.get("ADMIN_PASSWORD")
+    if user_count == 0 and admin_password:
+        admin_username = config.get("ADMIN_USERNAME", "admin")
+        conn.execute(
+            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+            (admin_username, generate_password_hash(admin_password)),
         )
     conn.commit()
     conn.close()
@@ -81,3 +101,34 @@ def get_thresholds(path=None):
     rows = cursor.fetchall()
     conn.close()
     return {metric: (warn_boundary, fault_boundary) for metric, warn_boundary, fault_boundary in rows}
+
+
+def update_threshold(metric, warn_boundary, fault_boundary, path=None):
+    conn = get_connection(path)
+    conn.execute(
+        "UPDATE thresholds SET warn_boundary = ?, fault_boundary = ? WHERE metric = ?",
+        (warn_boundary, fault_boundary, metric),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_user(username, path=None):
+    conn = get_connection(path)
+    cursor = conn.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+def upsert_user(username, password_hash, path=None):
+    conn = get_connection(path)
+    conn.execute(
+        """
+        INSERT INTO users (username, password_hash) VALUES (?, ?)
+        ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash
+        """,
+        (username, password_hash),
+    )
+    conn.commit()
+    conn.close()
