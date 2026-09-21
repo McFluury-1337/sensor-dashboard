@@ -11,6 +11,7 @@
 - pytest — тесты чистых функций (`state.py`, `preprocessing.py`), API и админки (`test_client()`) и сверка с данными НИР, зависимость только для разработки (`requirements-dev.txt`)
 - Секреты (`API_KEY`, `API_URL`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `SECRET_KEY`) — в `.env` (не в репозитории), читаются своим минимальным загрузчиком `config.py` на стандартной библиотеке
 - `werkzeug.security` (приезжает вместе с Flask) — хеширование пароля админа и сравнение при входе
+- Pico CSS 2 (classless, fluid) через CDN (`<link>` в `_page()`) — вся вёрстка на семантических тегах, без Bootstrap/Tailwind; тёмная тема с приборным акцентом переопределена через CSS-переменные Pico
 
 ## Структура
 ```
@@ -36,7 +37,7 @@ harness/             # PROJECT.md и BRIEF/PLAN/REPORT по этапам (harnes
 | `state.py` | `state.py` | `classify_metric(value, warn, fault)` — состояние одного параметра по порогам; `classify_reading(temp, pressure, vibration, thresholds)` — итоговое состояние показания, правило «худшее из трёх» (см. DECISIONS.md). Чистые функции, без БД/Flask. |
 | `preprocessing.py` | `preprocessing.py` | `normalize(values)` — приведение к [0,1]; `standardize(values)` — z-score. Чистые функции, без БД/Flask. |
 | `simulator.py` | `simulator.py` | Выбирает состояние, генерирует temp/pressure/vibration через `random.normalvariate` по mu/sd из НИР, отправляет `POST /api/readings` с заголовком `X-API-Key` через `urllib.request`. |
-| `app.py` | `app.py` | `/` — индикатор, график, таблицы. `POST`/`GET /api/readings` — API с ключом (см. Этап 3). `/login` — форма входа, сессия через `session`/`SECRET_KEY`. `/admin` (за `login_required`) — форма ручного ввода показания и форма правки порогов, обе пишут через `db.py`. `/admin/logout` — сброс сессии. |
+| `app.py` | `app.py` | `/` — индикатор, график, таблицы. `POST`/`GET /api/readings` — API с ключом (см. Этап 3). `/login` — форма входа, сессия через `session`/`SECRET_KEY`. `/admin` (за `login_required`) — форма ручного ввода показания и форма правки порогов, обе пишут через `db.py`. `/admin/logout` — сброс сессии. `_page()`/`PAGE_STYLES`/`_nav_html()` — общая обёртка страниц (Pico CSS, шапка/подвал), переиспользуется всеми тремя маршрутами. |
 
 ## Как запустить / проверить
 ```bash

@@ -18,10 +18,103 @@ app.secret_key = config.get("SECRET_KEY")
 API_KEY = config.get("API_KEY")
 
 STATE_COLOR = {
-    "норма": "green",
-    "предупреждение": "orange",
-    "неисправность": "red",
+    "норма": "#3fae59",
+    "предупреждение": "#d99b2b",
+    "неисправность": "#d1483f",
 }
+
+METRIC_LABEL = {
+    "temperature": "Температура",
+    "pressure": "Давление",
+    "vibration": "Вибрация",
+}
+
+PAGE_STYLES = """
+:root[data-theme="dark"] {
+    --pico-background-color: #12181f;
+    --pico-color: #dfe6ec;
+    --pico-muted-color: #8a95a3;
+    --pico-muted-border-color: #232d38;
+    --pico-primary: #2fb0c7;
+    --pico-primary-background: #1f8fa3;
+    --pico-primary-border: var(--pico-primary-background);
+    --pico-primary-underline: rgba(47, 176, 199, 0.5);
+    --pico-primary-hover: #58c3d6;
+    --pico-primary-hover-background: #2596ab;
+    --pico-primary-hover-border: var(--pico-primary-hover-background);
+    --pico-primary-focus: rgba(47, 176, 199, 0.375);
+    --pico-primary-inverse: #04141a;
+}
+
+table {
+    background-color: #1b232c;
+}
+
+td {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 480px) {
+    td, th {
+        padding: 0.4rem 0.5rem;
+        font-size: 0.8rem;
+    }
+}
+
+.tables-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+}
+
+@media (min-width: 900px) {
+    .tables-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+"""
+
+
+def _nav_html():
+    if session.get("logged_in"):
+        links = [(url_for("admin"), "Админка"), (url_for("logout"), "Выйти")]
+    else:
+        links = [(url_for("login"), "Войти")]
+
+    items_html = "".join(f'<li><a href="{href}">{label}</a></li>' for href, label in links)
+
+    return f"""
+    <nav>
+        <ul><li><a href="{url_for('index')}"><strong>Пульт мониторинга</strong></a></li></ul>
+        <ul>{items_html}</ul>
+    </nav>
+    """
+
+
+def _page(title, body_html):
+    return f"""<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>{title}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.fluid.classless.min.css">
+<style>{PAGE_STYLES}</style>
+</head>
+<body>
+<header>
+{_nav_html()}
+</header>
+<main>
+{body_html}
+</main>
+<footer>
+<p><small>Пет-проект «Пульт мониторинга технической системы»</small></p>
+</footer>
+</body>
+</html>"""
 
 
 def build_chart_datasets(readings):
@@ -82,7 +175,10 @@ def index():
     all_readings = db.get_all_readings()
 
     if not latest:
-        return "<p>Нет данных. Запустите simulator.py, чтобы получить первые показания.</p>"
+        return _page(
+            "Пульт мониторинга",
+            "<p>Нет данных. Запустите simulator.py, чтобы получить первые показания.</p>",
+        )
 
     _, temperature, pressure, vibration = latest[0]
     current_state = classify_reading(temperature, pressure, vibration, thresholds)
@@ -92,35 +188,52 @@ def index():
     stats_rows_html = build_stats_table(all_readings, thresholds)
 
     recent_rows_html = "".join(
-        f"<tr><td>{timestamp}</td><td>{t:.2f}</td><td>{p:.2f}</td><td>{v:.2f}</td></tr>"
+        f"<tr><td>{timestamp.split('.')[0].replace('T', ' ')}</td><td>{t:.2f}</td><td>{p:.2f}</td><td>{v:.2f}</td></tr>"
         for timestamp, t, p, v in recent
     )
 
-    return f"""
-    <h1>Пульт мониторинга технической системы</h1>
+    body = f"""
+    <hgroup>
+        <h1>Пульт мониторинга технической системы</h1>
+        <p>Текущее состояние: <strong id="current-state" style="color: {color};">{current_state}</strong></p>
+    </hgroup>
 
-    <p>Текущее состояние: <strong style="color: {color};">{current_state}</strong></p>
+    <section>
+        <h2>График последних {len(recent)} показаний</h2>
+        <label for="mode">
+            Вид данных
+            <select id="mode">
+                <option value="raw">сырые</option>
+                <option value="normalized">нормализованные</option>
+                <option value="standardized">стандартизированные</option>
+            </select>
+        </label>
+        <div style="height: 320px;">
+            <canvas id="chart"></canvas>
+        </div>
+    </section>
 
-    <h2>График последних {len(recent)} показаний</h2>
-    <label for="mode">Вид данных:</label>
-    <select id="mode">
-        <option value="raw">сырые</option>
-        <option value="normalized">нормализованные</option>
-        <option value="standardized">стандартизированные</option>
-    </select>
-    <canvas id="chart" width="800" height="300"></canvas>
+    <div class="tables-grid">
+        <section style="min-width: 0;">
+            <h2>Среднее ± σ по состояниям</h2>
+            <div style="overflow-x: auto;">
+                <table>
+                    <tr><th>Состояние</th><th>Температура</th><th>Давление</th><th>Вибрация</th></tr>
+                    {stats_rows_html}
+                </table>
+            </div>
+        </section>
 
-    <h2>Среднее ± σ по состояниям</h2>
-    <table border="1">
-        <tr><th>Состояние</th><th>Температура</th><th>Давление</th><th>Вибрация</th></tr>
-        {stats_rows_html}
-    </table>
-
-    <h2>Последние {len(recent)} показаний</h2>
-    <table border="1">
-        <tr><th>Время</th><th>Температура</th><th>Давление</th><th>Вибрация</th></tr>
-        {recent_rows_html}
-    </table>
+        <section style="min-width: 0;">
+            <h2>Последние {len(recent)} показаний</h2>
+            <div style="overflow-x: auto;">
+                <table>
+                    <tr><th>Время</th><th>Температура</th><th>Давление</th><th>Вибрация</th></tr>
+                    {recent_rows_html}
+                </table>
+            </div>
+        </section>
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script>
@@ -132,11 +245,12 @@ def index():
             data: {{
                 labels: chartData.labels,
                 datasets: [
-                    {{ label: "Температура", data: chartData.raw.temperature, borderColor: "red", fill: false }},
-                    {{ label: "Давление", data: chartData.raw.pressure, borderColor: "blue", fill: false }},
-                    {{ label: "Вибрация", data: chartData.raw.vibration, borderColor: "green", fill: false }}
+                    {{ label: "Температура", data: chartData.raw.temperature, borderColor: "#d1483f", fill: false }},
+                    {{ label: "Давление", data: chartData.raw.pressure, borderColor: "#2fb0c7", fill: false }},
+                    {{ label: "Вибрация", data: chartData.raw.vibration, borderColor: "#d99b2b", fill: false }}
                 ]
-            }}
+            }},
+            options: {{ responsive: true, maintainAspectRatio: false }}
         }});
 
         document.getElementById("mode").addEventListener("change", function (event) {{
@@ -148,6 +262,8 @@ def index():
         }});
     </script>
     """
+
+    return _page("Пульт мониторинга", body)
 
 
 def _valid_api_key():
@@ -240,15 +356,25 @@ def login():
 
     messages_html = "".join(f"<p>{message}</p>" for message in get_flashed_messages())
 
-    return f"""
-    <h1>Вход</h1>
-    {messages_html}
-    <form method="post">
-        <label>Логин: <input name="username"></label><br>
-        <label>Пароль: <input name="password" type="password"></label><br>
-        <button type="submit">Войти</button>
-    </form>
+    body = f"""
+    <article style="max-width: 24rem; margin-inline: auto;">
+        <h1>Вход</h1>
+        {messages_html}
+        <form method="post">
+            <label for="username">
+                Логин
+                <input id="username" name="username" autocomplete="username">
+            </label>
+            <label for="password">
+                Пароль
+                <input id="password" name="password" type="password" autocomplete="current-password">
+            </label>
+            <button type="submit">Войти</button>
+        </form>
+    </article>
     """
+
+    return _page("Вход", body)
 
 
 @app.route("/admin/logout")
@@ -264,38 +390,54 @@ def admin():
     messages_html = "".join(f"<p>{message}</p>" for message in get_flashed_messages())
 
     threshold_rows_html = "".join(
-        f"""
-        <tr>
-            <td>{metric}</td>
+        f"""<tr>
+            <td>{METRIC_LABEL[metric]}</td>
             <td><input name="{metric}_warn" value="{warn}"></td>
             <td><input name="{metric}_fault" value="{fault}"></td>
-        </tr>
-        """
+        </tr>"""
         for metric, (warn, fault) in thresholds.items()
     )
 
-    return f"""
+    body = f"""
     <h1>Админка</h1>
-    <p><a href="{url_for('logout')}">Выйти</a> · <a href="{url_for('index')}">На главную</a></p>
     {messages_html}
 
-    <h2>Ввести показание вручную</h2>
-    <form method="post" action="{url_for('admin_create_reading')}">
-        <label>Температура: <input name="temperature"></label><br>
-        <label>Давление: <input name="pressure"></label><br>
-        <label>Вибрация: <input name="vibration"></label><br>
-        <button type="submit">Добавить</button>
-    </form>
+    <div class="tables-grid">
+        <section style="min-width: 0;">
+            <h2>Ввести показание вручную</h2>
+            <form method="post" action="{url_for('admin_create_reading')}">
+                <label for="temperature">
+                    Температура
+                    <input id="temperature" name="temperature">
+                </label>
+                <label for="pressure">
+                    Давление
+                    <input id="pressure" name="pressure">
+                </label>
+                <label for="vibration">
+                    Вибрация
+                    <input id="vibration" name="vibration">
+                </label>
+                <button type="submit">Добавить</button>
+            </form>
+        </section>
 
-    <h2>Пороги состояний</h2>
-    <form method="post" action="{url_for('admin_update_thresholds')}">
-        <table border="1">
-            <tr><th>Метрика</th><th>Предупреждение с</th><th>Неисправность с</th></tr>
-            {threshold_rows_html}
-        </table>
-        <button type="submit">Сохранить пороги</button>
-    </form>
+        <section style="min-width: 0;">
+            <h2>Пороги состояний</h2>
+            <form method="post" action="{url_for('admin_update_thresholds')}">
+                <div style="overflow-x: auto;">
+                    <table>
+                        <tr><th>Метрика</th><th>Предупреждение с</th><th>Неисправность с</th></tr>
+                        {threshold_rows_html}
+                    </table>
+                </div>
+                <button type="submit">Сохранить пороги</button>
+            </form>
+        </section>
+    </div>
     """
+
+    return _page("Админка", body)
 
 
 @app.route("/admin/readings", methods=["POST"])
