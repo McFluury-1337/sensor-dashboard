@@ -92,6 +92,10 @@ def _nav_html():
     """
 
 
+def _flashed_messages_html():
+    return "".join(f"<p>{message}</p>" for message in get_flashed_messages())
+
+
 def _page(title, body_html):
     return f"""<!doctype html>
 <html lang="ru" data-theme="dark">
@@ -188,8 +192,9 @@ def index():
     stats_rows_html = build_stats_table(all_readings, thresholds)
 
     recent_rows_html = "".join(
-        f"<tr><td>{timestamp.split('.')[0].replace('T', ' ')}</td><td>{t:.2f}</td><td>{p:.2f}</td><td>{v:.2f}</td></tr>"
-        for timestamp, t, p, v in recent
+        f"<tr><td>{timestamp.split('.')[0].replace('T', ' ')}</td>"
+        f"<td>{temperature:.2f}</td><td>{pressure:.2f}</td><td>{vibration:.2f}</td></tr>"
+        for timestamp, temperature, pressure, vibration in recent
     )
 
     body = f"""
@@ -314,8 +319,8 @@ def list_readings():
 
     rows = db.get_latest_readings(limit)
     return jsonify([
-        {"timestamp": timestamp, "temperature": t, "pressure": p, "vibration": v}
-        for timestamp, t, p, v in rows
+        {"timestamp": timestamp, "temperature": temperature, "pressure": pressure, "vibration": vibration}
+        for timestamp, temperature, pressure, vibration in rows
     ])
 
 
@@ -354,7 +359,7 @@ def login():
             return redirect(url_for("admin"))
         flash("Неверный логин или пароль")
 
-    messages_html = "".join(f"<p>{message}</p>" for message in get_flashed_messages())
+    messages_html = _flashed_messages_html()
 
     body = f"""
     <article style="max-width: 24rem; margin-inline: auto;">
@@ -387,7 +392,7 @@ def logout():
 @login_required
 def admin():
     thresholds = db.get_thresholds()
-    messages_html = "".join(f"<p>{message}</p>" for message in get_flashed_messages())
+    messages_html = _flashed_messages_html()
 
     threshold_rows_html = "".join(
         f"""<tr>
