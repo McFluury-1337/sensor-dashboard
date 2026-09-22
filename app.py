@@ -23,6 +23,12 @@ STATE_COLOR = {
     "неисправность": "#d1483f",
 }
 
+STATE_BACKGROUND = {
+    "норма": "rgba(63, 174, 89, 0.14)",
+    "предупреждение": "rgba(217, 155, 43, 0.14)",
+    "неисправность": "rgba(209, 72, 63, 0.14)",
+}
+
 METRIC_LABEL = {
     "temperature": "Температура",
     "pressure": "Давление",
@@ -44,10 +50,6 @@ PAGE_STYLES = """
     --pico-primary-hover-border: var(--pico-primary-hover-background);
     --pico-primary-focus: rgba(47, 176, 199, 0.375);
     --pico-primary-inverse: #04141a;
-}
-
-table {
-    background-color: #1b232c;
 }
 
 td {
@@ -72,6 +74,71 @@ td {
     .tables-grid {
         grid-template-columns: 1fr 1fr;
     }
+}
+
+nav {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: rgba(18, 24, 31, 0.85);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+h2 {
+    padding-left: 0.85rem;
+    border-left: 3px solid var(--pico-primary);
+}
+
+.state-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.state-badge .dot {
+    width: 0.5em;
+    height: 0.5em;
+    border-radius: 50%;
+    background: currentColor;
+    display: inline-block;
+    flex: none;
+}
+
+.table-card {
+    background-color: #1b232c;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 0.5rem;
+    overflow: auto;
+}
+
+.table-card table {
+    margin-bottom: 0;
+}
+
+.table-card thead th {
+    position: sticky;
+    top: 0;
+    background-color: #202a35;
+}
+
+.table-card tbody tr:nth-child(even) {
+    background-color: rgba(255, 255, 255, 0.025);
+}
+
+.table-card tbody tr:hover {
+    background-color: rgba(47, 176, 199, 0.08);
+}
+
+footer {
+    margin-top: 2.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--pico-muted-border-color);
 }
 """
 
@@ -190,6 +257,7 @@ def index():
 
     chart_data = build_chart_datasets(recent)
     stats_rows_html = build_stats_table(all_readings, thresholds)
+    background = STATE_BACKGROUND[current_state]
 
     recent_rows_html = "".join(
         f"<tr><td>{timestamp.split('.')[0].replace('T', ' ')}</td>"
@@ -200,10 +268,14 @@ def index():
     body = f"""
     <hgroup>
         <h1>Пульт мониторинга технической системы</h1>
-        <p>Текущее состояние: <strong id="current-state" style="color: {color};">{current_state}</strong></p>
+        <p>Текущее состояние:
+            <strong id="current-state" class="state-badge" style="color: {color}; background: {background};">
+                <span class="dot"></span>{current_state}
+            </strong>
+        </p>
     </hgroup>
 
-    <section>
+    <article>
         <h2>График последних {len(recent)} показаний</h2>
         <label for="mode">
             Вид данных
@@ -216,28 +288,28 @@ def index():
         <div style="height: 320px;">
             <canvas id="chart"></canvas>
         </div>
-    </section>
+    </article>
 
     <div class="tables-grid">
-        <section style="min-width: 0;">
+        <article style="min-width: 0;">
             <h2>Среднее ± σ по состояниям</h2>
-            <div style="overflow-x: auto;">
+            <div class="table-card">
                 <table>
                     <tr><th>Состояние</th><th>Температура</th><th>Давление</th><th>Вибрация</th></tr>
                     {stats_rows_html}
                 </table>
             </div>
-        </section>
+        </article>
 
-        <section style="min-width: 0;">
+        <article style="min-width: 0;">
             <h2>Последние {len(recent)} показаний</h2>
-            <div style="overflow-x: auto;">
+            <div class="table-card">
                 <table>
                     <tr><th>Время</th><th>Температура</th><th>Давление</th><th>Вибрация</th></tr>
                     {recent_rows_html}
                 </table>
             </div>
-        </section>
+        </article>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -250,12 +322,21 @@ def index():
             data: {{
                 labels: chartData.labels,
                 datasets: [
-                    {{ label: "Температура", data: chartData.raw.temperature, borderColor: "#d1483f", fill: false }},
-                    {{ label: "Давление", data: chartData.raw.pressure, borderColor: "#2fb0c7", fill: false }},
-                    {{ label: "Вибрация", data: chartData.raw.vibration, borderColor: "#d99b2b", fill: false }}
+                    {{ label: "Температура", data: chartData.raw.temperature, borderColor: "#d1483f", backgroundColor: "rgba(209, 72, 63, 0.08)", fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }},
+                    {{ label: "Давление", data: chartData.raw.pressure, borderColor: "#2fb0c7", backgroundColor: "rgba(47, 176, 199, 0.12)", fill: false, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }},
+                    {{ label: "Вибрация", data: chartData.raw.vibration, borderColor: "#d99b2b", backgroundColor: "rgba(217, 155, 43, 0.12)", fill: false, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }}
                 ]
             }},
-            options: {{ responsive: true, maintainAspectRatio: false }}
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {{ mode: "index", intersect: false }},
+                plugins: {{ legend: {{ labels: {{ color: "#dfe6ec" }} }} }},
+                scales: {{
+                    x: {{ ticks: {{ color: "#8a95a3" }}, grid: {{ color: "rgba(255, 255, 255, 0.05)" }} }},
+                    y: {{ ticks: {{ color: "#8a95a3" }}, grid: {{ color: "rgba(255, 255, 255, 0.05)" }} }}
+                }}
+            }}
         }});
 
         document.getElementById("mode").addEventListener("change", function (event) {{
@@ -408,7 +489,7 @@ def admin():
     {messages_html}
 
     <div class="tables-grid">
-        <section style="min-width: 0;">
+        <article style="min-width: 0;">
             <h2>Ввести показание вручную</h2>
             <form method="post" action="{url_for('admin_create_reading')}">
                 <label for="temperature">
@@ -425,12 +506,12 @@ def admin():
                 </label>
                 <button type="submit">Добавить</button>
             </form>
-        </section>
+        </article>
 
-        <section style="min-width: 0;">
+        <article style="min-width: 0;">
             <h2>Пороги состояний</h2>
             <form method="post" action="{url_for('admin_update_thresholds')}">
-                <div style="overflow-x: auto;">
+                <div class="table-card">
                     <table>
                         <tr><th>Метрика</th><th>Предупреждение с</th><th>Неисправность с</th></tr>
                         {threshold_rows_html}
@@ -438,7 +519,7 @@ def admin():
                 </div>
                 <button type="submit">Сохранить пороги</button>
             </form>
-        </section>
+        </article>
     </div>
     """
 
