@@ -10,7 +10,7 @@ from werkzeug.security import check_password_hash
 import config
 import db
 from preprocessing import normalize, standardize
-from state import classify_reading
+from state import classify_metric, classify_reading
 
 app = Flask(__name__)
 app.secret_key = config.get("SECRET_KEY")
@@ -140,6 +140,62 @@ footer {
     padding-top: 1.25rem;
     border-top: 1px solid var(--pico-muted-border-color);
 }
+
+.gauges-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+}
+
+@media (min-width: 700px) {
+    .gauges-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+.gauge-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.5rem;
+}
+
+.gauge-label {
+    color: var(--pico-muted-color);
+    font-size: 0.9rem;
+}
+
+.gauge-value {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 1.3rem;
+    font-weight: 700;
+}
+
+.gauge-track {
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+}
+
+.gauge-marker {
+    position: absolute;
+    top: 50%;
+    width: 4px;
+    height: 22px;
+    background: #eef3f7;
+    border-radius: 2px;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4);
+}
+
+.gauge-scale {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--pico-muted-color);
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+}
 """
 
 
@@ -213,6 +269,43 @@ def build_chart_datasets(readings):
     }
 
 
+def _format_scale(metric, value):
+    return f"{value:.0f}" if metric == "temperature" else f"{value:.1f}"
+
+
+def build_gauges_html(temperature, pressure, vibration, thresholds):
+    values = {"temperature": temperature, "pressure": pressure, "vibration": vibration}
+    gauges_html = ""
+    for metric in ("temperature", "pressure", "vibration"):
+        value = values[metric]
+        warn, fault = thresholds[metric]
+        zone = classify_metric(value, warn, fault)
+        color = STATE_COLOR[zone]
+        max_scale = max(fault * 1.4, value * 1.05, warn * 1.1)
+        warn_pct = min(100.0, warn / max_scale * 100)
+        fault_pct = min(100.0, fault / max_scale * 100)
+        value_pct = min(100.0, max(0.0, value / max_scale * 100))
+
+        gauges_html += f"""
+        <div class="gauge">
+            <div class="gauge-head">
+                <span class="gauge-label">{METRIC_LABEL[metric]}</span>
+                <span class="gauge-value" style="color: {color};">{value:.2f}</span>
+            </div>
+            <div class="gauge-track" style="background: linear-gradient(to right,
+                #3fae59 0%, #3fae59 {warn_pct:.2f}%,
+                #d99b2b {warn_pct:.2f}%, #d99b2b {fault_pct:.2f}%,
+                #d1483f {fault_pct:.2f}%, #d1483f 100%);">
+                <div class="gauge-marker" style="left: {value_pct:.2f}%;"></div>
+            </div>
+            <div class="gauge-scale">
+                <span>0</span><span>{_format_scale(metric, max_scale)}</span>
+            </div>
+        </div>
+        """
+    return gauges_html
+
+
 def build_stats_table(all_readings, thresholds):
     by_state = {"норма": {"temperature": [], "pressure": [], "vibration": []},
                 "предупреждение": {"temperature": [], "pressure": [], "vibration": []},
@@ -256,8 +349,10 @@ def index():
     color = STATE_COLOR[current_state]
 
     chart_data = build_chart_datasets(recent)
+    gauges_html = build_gauges_html(temperature, pressure, vibration, thresholds)
     stats_rows_html = build_stats_table(all_readings, thresholds)
     background = STATE_BACKGROUND[current_state]
+    thresholds_json = json.dumps({metric: list(bounds) for metric, bounds in thresholds.items()})
 
     recent_rows_html = "".join(
         f"<tr><td>{timestamp.split('.')[0].replace('T', ' ')}</td>"
@@ -274,6 +369,13 @@ def index():
             </strong>
         </p>
     </hgroup>
+
+    <article>
+        <h2>Показания сейчас</h2>
+        <div class="gauges-grid">
+            {gauges_html}
+        </div>
+    </article>
 
     <article>
         <h2>График последних {len(recent)} показаний</h2>
@@ -315,6 +417,21 @@ def index():
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script>
         const chartData = {json.dumps(chart_data)};
+        const thresholds = {thresholds_json};
+        const metricColors = {{ temperature: "#d1483f", pressure: "#2fb0c7", vibration: "#d99b2b" }};
+
+        function buildThresholdDatasets() {{
+            const datasets = [];
+            for (const metric of ["temperature", "pressure", "vibration"]) {{
+                const [warn, fault] = thresholds[metric];
+                const color = metricColors[metric];
+                datasets.push(
+                    {{ label: metric + "-warn", data: chartData.labels.map(() => warn), borderColor: color, borderDash: [6, 4], borderWidth: 1, pointRadius: 0, fill: false, tension: 0, order: 10 }},
+                    {{ label: metric + "-fault", data: chartData.labels.map(() => fault), borderColor: color, borderDash: [2, 3], borderWidth: 1, pointRadius: 0, fill: false, tension: 0, order: 10 }}
+                );
+            }}
+            return datasets;
+        }}
 
         const ctx = document.getElementById("chart");
         const chart = new Chart(ctx, {{
@@ -324,14 +441,22 @@ def index():
                 datasets: [
                     {{ label: "Температура", data: chartData.raw.temperature, borderColor: "#d1483f", backgroundColor: "rgba(209, 72, 63, 0.08)", fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }},
                     {{ label: "Давление", data: chartData.raw.pressure, borderColor: "#2fb0c7", backgroundColor: "rgba(47, 176, 199, 0.12)", fill: false, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }},
-                    {{ label: "Вибрация", data: chartData.raw.vibration, borderColor: "#d99b2b", backgroundColor: "rgba(217, 155, 43, 0.12)", fill: false, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }}
+                    {{ label: "Вибрация", data: chartData.raw.vibration, borderColor: "#d99b2b", backgroundColor: "rgba(217, 155, 43, 0.12)", fill: false, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }},
+                    ...buildThresholdDatasets()
                 ]
             }},
             options: {{
                 responsive: true,
                 maintainAspectRatio: false,
                 interaction: {{ mode: "index", intersect: false }},
-                plugins: {{ legend: {{ labels: {{ color: "#dfe6ec" }} }} }},
+                plugins: {{
+                    legend: {{
+                        labels: {{
+                            color: "#dfe6ec",
+                            filter: (item) => !item.text.endsWith("-warn") && !item.text.endsWith("-fault")
+                        }}
+                    }}
+                }},
                 scales: {{
                     x: {{ ticks: {{ color: "#8a95a3" }}, grid: {{ color: "rgba(255, 255, 255, 0.05)" }} }},
                     y: {{ ticks: {{ color: "#8a95a3" }}, grid: {{ color: "rgba(255, 255, 255, 0.05)" }} }}
@@ -344,6 +469,9 @@ def index():
             chart.data.datasets[0].data = chartData[mode].temperature;
             chart.data.datasets[1].data = chartData[mode].pressure;
             chart.data.datasets[2].data = chartData[mode].vibration;
+            for (let i = 3; i < chart.data.datasets.length; i++) {{
+                chart.data.datasets[i].hidden = mode !== "raw";
+            }}
             chart.update();
         }});
     </script>
