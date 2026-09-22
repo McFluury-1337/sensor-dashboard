@@ -147,6 +147,13 @@ nav {
     flex: none;
 }
 
+.state-reason {
+    margin-left: 0.6rem;
+    color: var(--pico-muted-color);
+    font-size: 0.85rem;
+    font-family: var(--pico-font-family-monospace);
+}
+
 .table-card {
     background-color: var(--pico-background-color);
     border: 1px solid var(--pico-muted-border-color);
@@ -170,6 +177,23 @@ nav {
 
 .table-card tbody tr:hover {
     background-color: rgba(47, 176, 199, 0.08);
+}
+
+#recent-table:not(.expanded) tbody tr:nth-child(n+6) {
+    display: none;
+}
+
+.table-toggle {
+    margin-top: 0.75rem;
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--pico-muted-border-color);
+    color: var(--pico-color);
+}
+
+.table-toggle:hover {
+    background: var(--surface-2);
+    border-color: var(--pico-muted-border-color);
 }
 
 footer {
@@ -348,6 +372,23 @@ def build_gauges_html(temperature, pressure, vibration, thresholds):
     return gauges_html
 
 
+def build_state_reason(temperature, pressure, vibration, thresholds, current_state):
+    if current_state == "норма":
+        return ""
+
+    values = {"temperature": temperature, "pressure": pressure, "vibration": vibration}
+    parts = []
+    for metric in ("temperature", "pressure", "vibration"):
+        value = values[metric]
+        warn, fault = thresholds[metric]
+        zone = classify_metric(value, warn, fault)
+        if zone == current_state:
+            boundary = fault if current_state == "неисправность" else warn
+            parts.append(f"{METRIC_LABEL[metric]} {value:.2f} ≥ {boundary:.2f}")
+
+    return "Причина: " + "; ".join(parts)
+
+
 def build_stats_table(all_readings, thresholds):
     by_state = {"норма": {"temperature": [], "pressure": [], "vibration": []},
                 "предупреждение": {"temperature": [], "pressure": [], "vibration": []},
@@ -393,6 +434,7 @@ def index():
     chart_data = build_chart_datasets(recent)
     gauges_html = build_gauges_html(temperature, pressure, vibration, thresholds)
     stats_rows_html = build_stats_table(all_readings, thresholds)
+    state_reason = build_state_reason(temperature, pressure, vibration, thresholds, current_state)
     background = STATE_BACKGROUND[current_state]
     thresholds_json = json.dumps({metric: list(bounds) for metric, bounds in thresholds.items()})
 
@@ -409,6 +451,7 @@ def index():
             <strong id="current-state" class="state-badge" style="color: {color}; background: {background};">
                 <span class="dot"></span>{current_state}
             </strong>
+            {f'<span class="state-reason">{state_reason}</span>' if state_reason else ''}
         </p>
     </hgroup>
 
@@ -439,20 +482,21 @@ def index():
             <h2>Среднее ± σ по состояниям</h2>
             <div class="table-card">
                 <table>
-                    <tr><th>Состояние</th><th>Температура</th><th>Давление</th><th>Вибрация</th></tr>
-                    {stats_rows_html}
+                    <thead><tr><th>Состояние</th><th>Температура</th><th>Давление</th><th>Вибрация</th></tr></thead>
+                    <tbody>{stats_rows_html}</tbody>
                 </table>
             </div>
         </article>
 
         <article style="min-width: 0;">
             <h2>Последние {len(recent)} показаний</h2>
-            <div class="table-card">
+            <div class="table-card" id="recent-table">
                 <table>
-                    <tr><th>Время</th><th>Температура</th><th>Давление</th><th>Вибрация</th></tr>
-                    {recent_rows_html}
+                    <thead><tr><th>Время</th><th>Температура</th><th>Давление</th><th>Вибрация</th></tr></thead>
+                    <tbody>{recent_rows_html}</tbody>
                 </table>
             </div>
+            {f'<button type="button" class="table-toggle" id="recent-toggle">Показать все {len(recent)}</button>' if len(recent) > 5 else ''}
         </article>
     </div>
 
@@ -484,9 +528,9 @@ def index():
             data: {{
                 labels: chartData.labels,
                 datasets: [
-                    {{ label: "Температура", data: chartData.raw.temperature, borderColor: "#d1483f", backgroundColor: "rgba(209, 72, 63, 0.08)", fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }},
-                    {{ label: "Давление", data: chartData.raw.pressure, borderColor: "#2fb0c7", backgroundColor: "rgba(47, 176, 199, 0.12)", fill: false, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }},
-                    {{ label: "Вибрация", data: chartData.raw.vibration, borderColor: "#d99b2b", backgroundColor: "rgba(217, 155, 43, 0.12)", fill: false, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }},
+                    {{ label: "Температура", data: chartData.raw.temperature, borderColor: "#d1483f", backgroundColor: "rgba(209, 72, 63, 0.08)", pointBackgroundColor: "#d1483f", pointBorderColor: "#101214", pointHoverBackgroundColor: "#d1483f", pointHoverBorderColor: "#e7eaee", fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }},
+                    {{ label: "Давление", data: chartData.raw.pressure, borderColor: "#2fb0c7", backgroundColor: "rgba(47, 176, 199, 0.12)", pointBackgroundColor: "#2fb0c7", pointBorderColor: "#101214", pointHoverBackgroundColor: "#2fb0c7", pointHoverBorderColor: "#e7eaee", fill: false, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }},
+                    {{ label: "Вибрация", data: chartData.raw.vibration, borderColor: "#d99b2b", backgroundColor: "rgba(217, 155, 43, 0.12)", pointBackgroundColor: "#d99b2b", pointBorderColor: "#101214", pointHoverBackgroundColor: "#d99b2b", pointHoverBorderColor: "#e7eaee", fill: false, tension: 0.3, pointRadius: 2, pointHoverRadius: 5 }},
                     ...buildThresholdDatasets()
                 ]
             }},
@@ -498,8 +542,20 @@ def index():
                     legend: {{
                         labels: {{
                             color: "#e7eaee",
+                            usePointStyle: true,
                             filter: (item) => !item.text.endsWith("-warn") && !item.text.endsWith("-fault")
                         }}
+                    }},
+                    tooltip: {{
+                        usePointStyle: true,
+                        backgroundColor: "#1a1d21",
+                        borderColor: "#2b2f35",
+                        borderWidth: 1,
+                        titleColor: "#e7eaee",
+                        bodyColor: "#e7eaee",
+                        padding: 10,
+                        boxPadding: 4,
+                        filter: (item) => !item.dataset.label.endsWith("-warn") && !item.dataset.label.endsWith("-fault")
                     }}
                 }},
                 scales: {{
@@ -508,6 +564,15 @@ def index():
                 }}
             }}
         }});
+
+        const recentToggle = document.getElementById("recent-toggle");
+        if (recentToggle) {{
+            recentToggle.addEventListener("click", function () {{
+                const table = document.getElementById("recent-table");
+                const expanded = table.classList.toggle("expanded");
+                recentToggle.textContent = expanded ? "Свернуть" : "Показать все {len(recent)}";
+            }});
+        }}
 
         document.getElementById("mode").addEventListener("change", function (event) {{
             const mode = event.target.value;
@@ -686,8 +751,8 @@ def admin():
             <form method="post" action="{url_for('admin_update_thresholds')}">
                 <div class="table-card">
                     <table>
-                        <tr><th>Метрика</th><th>Предупреждение с</th><th>Неисправность с</th></tr>
-                        {threshold_rows_html}
+                        <thead><tr><th>Метрика</th><th>Предупреждение с</th><th>Неисправность с</th></tr></thead>
+                        <tbody>{threshold_rows_html}</tbody>
                     </table>
                 </div>
                 <button type="submit">Сохранить пороги</button>
