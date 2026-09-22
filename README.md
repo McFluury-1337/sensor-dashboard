@@ -58,14 +58,14 @@ pytest
 
 ## Стек
 
-Python 3, Flask, SQLite (локально) / MySQL (на хостинге), Chart.js, Pico CSS — без Bootstrap/Tailwind, без ORM и фреймворков поверх Flask. Подробности и обоснования — в [DECISIONS.md](DECISIONS.md).
+Python 3, Flask, SQLite (локально) / MySQL (на хостинге), Chart.js, Pico CSS, шрифты Inter + JetBrains Mono (Google Fonts) — без Bootstrap/Tailwind, без ORM и фреймворков поверх Flask. Подробности и обоснования — в [DECISIONS.md](DECISIONS.md).
 
 ## Структура проекта и журналы
 
 - [harness/PROJECT.md](harness/PROJECT.md) — карта проекта: модули, точки входа, известные особенности.
 - [DECISIONS.md](DECISIONS.md) — инженерные решения с причинами (пороги состояний, устройство API, выбор MySQL-драйвера и т.д.).
 - [LESSONS.md](LESSONS.md) — реальные грабли по ходу разработки, не «всё прошло гладко».
-- `harness/stage-1/` … `harness/stage-7/` — BRIEF/PLAN/REPORT по каждому этапу разработки (этапы описаны в задании куратора).
+- `harness/stage-1/` … `harness/stage-7/` — BRIEF/PLAN/REPORT по каждому этапу разработки (этапы описаны в задании куратора); `harness/stage-5.1/` — визуальный тюнинг после сдачи (оформлен задним числом, см. сам BRIEF).
 
 ## Что ещё не готово
 

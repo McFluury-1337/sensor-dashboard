@@ -75,6 +75,10 @@ h2 {
     font-size: 1.15rem;
     line-height: 1.3;
     font-weight: 600;
+    padding-left: 0.85rem;
+    border-left: 3px solid var(--pico-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
 
 article {
@@ -121,13 +125,6 @@ nav {
     background-color: rgba(16, 18, 20, 0.85);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--pico-muted-border-color);
-}
-
-h2 {
-    padding-left: 0.85rem;
-    border-left: 3px solid var(--pico-primary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
 }
 
 .state-badge {
