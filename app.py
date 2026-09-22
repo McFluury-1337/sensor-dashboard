@@ -37,10 +37,10 @@ METRIC_LABEL = {
 
 PAGE_STYLES = """
 :root[data-theme="dark"] {
-    --pico-background-color: #12181f;
-    --pico-color: #dfe6ec;
-    --pico-muted-color: #8a95a3;
-    --pico-muted-border-color: #232d38;
+    --pico-background-color: #101214;
+    --pico-color: #e7eaee;
+    --pico-muted-color: #9aa1ab;
+    --pico-muted-border-color: #2b2f35;
     --pico-primary: #2fb0c7;
     --pico-primary-background: #1f8fa3;
     --pico-primary-border: var(--pico-primary-background);
@@ -50,11 +50,49 @@ PAGE_STYLES = """
     --pico-primary-hover-border: var(--pico-primary-hover-background);
     --pico-primary-focus: rgba(47, 176, 199, 0.375);
     --pico-primary-inverse: #04141a;
+    --pico-font-family-sans-serif: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --pico-font-family-monospace: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    --surface: #1a1d21;
+    --surface-2: #23272c;
 }
 
-td {
-    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+body {
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-attachment: fixed;
+}
+
+h1 {
+    font-size: 1.85rem;
+    line-height: 1.25;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+h2 {
+    font-size: 1.15rem;
+    line-height: 1.3;
+    font-weight: 600;
+}
+
+article {
+    background-color: var(--surface);
+    border: 1px solid var(--pico-muted-border-color);
+}
+
+td, th {
+    font-family: var(--pico-font-family-monospace);
     font-variant-numeric: tabular-nums;
+}
+
+th {
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--pico-muted-color);
+    font-size: 0.8rem;
+    text-transform: uppercase;
 }
 
 @media (max-width: 480px) {
@@ -80,7 +118,7 @@ nav {
     position: sticky;
     top: 0;
     z-index: 10;
-    background-color: rgba(18, 24, 31, 0.85);
+    background-color: rgba(16, 18, 20, 0.85);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--pico-muted-border-color);
 }
@@ -88,6 +126,8 @@ nav {
 h2 {
     padding-left: 0.85rem;
     border-left: 3px solid var(--pico-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
 
 .state-badge {
@@ -111,7 +151,7 @@ h2 {
 }
 
 .table-card {
-    background-color: #1b232c;
+    background-color: var(--pico-background-color);
     border: 1px solid var(--pico-muted-border-color);
     border-radius: 0.5rem;
     overflow: auto;
@@ -124,7 +164,7 @@ h2 {
 .table-card thead th {
     position: sticky;
     top: 0;
-    background-color: #202a35;
+    background-color: var(--surface-2);
 }
 
 .table-card tbody tr:nth-child(even) {
@@ -162,13 +202,15 @@ footer {
 
 .gauge-label {
     color: var(--pico-muted-color);
-    font-size: 0.9rem;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
 
 .gauge-value {
-    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-family: var(--pico-font-family-monospace);
     font-size: 1.3rem;
-    font-weight: 700;
+    font-weight: 600;
 }
 
 .gauge-track {
@@ -194,7 +236,7 @@ footer {
     margin-top: 0.4rem;
     font-size: 0.75rem;
     color: var(--pico-muted-color);
-    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-family: var(--pico-font-family-monospace);
 }
 """
 
@@ -227,6 +269,9 @@ def _page(title, body_html):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>{title}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.fluid.classless.min.css">
 <style>{PAGE_STYLES}</style>
 </head>
@@ -433,6 +478,9 @@ def index():
             return datasets;
         }}
 
+        Chart.defaults.font.family = "'Inter', ui-sans-serif, system-ui, sans-serif";
+        Chart.defaults.font.size = 12;
+
         const ctx = document.getElementById("chart");
         const chart = new Chart(ctx, {{
             type: "line",
@@ -452,14 +500,14 @@ def index():
                 plugins: {{
                     legend: {{
                         labels: {{
-                            color: "#dfe6ec",
+                            color: "#e7eaee",
                             filter: (item) => !item.text.endsWith("-warn") && !item.text.endsWith("-fault")
                         }}
                     }}
                 }},
                 scales: {{
-                    x: {{ ticks: {{ color: "#8a95a3" }}, grid: {{ color: "rgba(255, 255, 255, 0.05)" }} }},
-                    y: {{ ticks: {{ color: "#8a95a3" }}, grid: {{ color: "rgba(255, 255, 255, 0.05)" }} }}
+                    x: {{ ticks: {{ color: "#9aa1ab" }}, grid: {{ color: "rgba(255, 255, 255, 0.04)" }} }},
+                    y: {{ ticks: {{ color: "#9aa1ab" }}, grid: {{ color: "rgba(255, 255, 255, 0.04)" }} }}
                 }}
             }}
         }});
