@@ -188,12 +188,14 @@ nav {
     width: 100%;
     background: transparent;
     border: 1px solid var(--pico-muted-border-color);
-    color: var(--pico-color);
+    color: #e7eaee;
 }
 
-.table-toggle:hover {
+.table-toggle:hover,
+.table-toggle:focus {
     background: var(--surface-2);
     border-color: var(--pico-muted-border-color);
+    color: #e7eaee;
 }
 
 footer {
