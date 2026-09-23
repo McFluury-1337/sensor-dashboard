@@ -262,6 +262,57 @@ footer {
     color: var(--pico-muted-color);
     font-family: var(--pico-font-family-monospace);
 }
+
+.analysis-bar-track {
+    position: relative;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    overflow: hidden;
+    margin: 0.5rem 0 0.75rem;
+}
+
+.analysis-bar-fill {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 35%;
+    border-radius: 999px;
+    background: var(--pico-primary);
+    animation: analysis-scan 2.2s ease-in-out infinite;
+}
+
+@keyframes analysis-scan {
+    0% { left: -35%; }
+    50% { left: 65%; }
+    100% { left: -35%; }
+}
+
+.analysis-status {
+    color: var(--pico-muted-color);
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+.analysis-reveal {
+    display: none;
+}
+
+.analysis-reveal-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin: 0.25rem 0 0.5rem;
+}
+
+#analysis-panel.revealed .analysis-bar-track,
+#analysis-panel.revealed .analysis-status:not(#reveal-time) {
+    display: none;
+}
+
+#analysis-panel.revealed .analysis-reveal {
+    display: block;
+}
 """
 
 
@@ -481,6 +532,31 @@ def index():
         </div>
     </article>
 
+    <article id="analysis-panel">
+        <h2>Анализ показаний</h2>
+        <div class="analysis-bar-track">
+            <div class="analysis-bar-fill"></div>
+        </div>
+        <p class="analysis-status">Анализ данных…</p>
+        <div class="analysis-reveal">
+            <div class="analysis-reveal-grid">
+                <div>
+                    <span class="gauge-label">Температура</span><br>
+                    <span class="gauge-value" id="reveal-temperature">—</span>
+                </div>
+                <div>
+                    <span class="gauge-label">Давление</span><br>
+                    <span class="gauge-value" id="reveal-pressure">—</span>
+                </div>
+                <div>
+                    <span class="gauge-label">Вибрация</span><br>
+                    <span class="gauge-value" id="reveal-vibration">—</span>
+                </div>
+            </div>
+            <p class="analysis-status" id="reveal-time">Новые показания получены</p>
+        </div>
+    </article>
+
     <article>
         <h2>График последних {len(recent)} показаний</h2>
         <label for="mode">
@@ -603,6 +679,52 @@ def index():
             }}
             chart.update();
         }});
+    </script>
+
+    <script>
+        (function () {{
+            const panel = document.getElementById("analysis-panel");
+            const revealTemperature = document.getElementById("reveal-temperature");
+            const revealPressure = document.getElementById("reveal-pressure");
+            const revealVibration = document.getElementById("reveal-vibration");
+            const revealTime = document.getElementById("reveal-time");
+
+            let lastTimestamp = null;
+            let revealTimer = null;
+
+            async function checkForNewReading() {{
+                let rows;
+                try {{
+                    const response = await fetch("/api/readings?limit=1");
+                    rows = await response.json();
+                }} catch (error) {{
+                    return;
+                }}
+                if (!rows || !rows.length) return;
+
+                const latest = rows[0];
+                if (lastTimestamp === null) {{
+                    lastTimestamp = latest.timestamp;
+                    return;
+                }}
+                if (latest.timestamp === lastTimestamp) return;
+                lastTimestamp = latest.timestamp;
+
+                revealTemperature.textContent = latest.temperature.toFixed(2);
+                revealPressure.textContent = latest.pressure.toFixed(2);
+                revealVibration.textContent = latest.vibration.toFixed(2);
+                revealTime.textContent = "Новое показание: " + latest.timestamp.split(".")[0].replace("T", " ");
+
+                panel.classList.add("revealed");
+                clearTimeout(revealTimer);
+                revealTimer = setTimeout(function () {{
+                    panel.classList.remove("revealed");
+                }}, 60000);
+            }}
+
+            checkForNewReading();
+            setInterval(checkForNewReading, 20000);
+        }})();
     </script>
     """
 
