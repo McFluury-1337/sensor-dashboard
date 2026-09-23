@@ -537,7 +537,7 @@ def index():
         <div class="analysis-bar-track">
             <div class="analysis-bar-fill"></div>
         </div>
-        <p class="analysis-status">Анализ данных…</p>
+        <p class="analysis-status" id="analysis-status">Анализ данных…</p>
         <div class="analysis-reveal">
             <div class="analysis-reveal-grid">
                 <div>
@@ -684,13 +684,24 @@ def index():
     <script>
         (function () {{
             const panel = document.getElementById("analysis-panel");
+            const status = document.getElementById("analysis-status");
             const revealTemperature = document.getElementById("reveal-temperature");
             const revealPressure = document.getElementById("reveal-pressure");
             const revealVibration = document.getElementById("reveal-vibration");
             const revealTime = document.getElementById("reveal-time");
 
+            const CYCLE_SECONDS = 300;
+
             let lastTimestamp = null;
+            let lastTimestampMs = null;
             let revealTimer = null;
+
+            function updateCountdown() {{
+                if (lastTimestampMs === null || panel.classList.contains("revealed")) return;
+                const elapsedSeconds = (Date.now() - lastTimestampMs) / 1000;
+                const remainingPercent = Math.max(0, Math.min(100, Math.round(100 - (elapsedSeconds / CYCLE_SECONDS) * 100)));
+                status.textContent = "Анализ данных… " + remainingPercent + "%";
+            }}
 
             async function checkForNewReading() {{
                 let rows;
@@ -705,10 +716,13 @@ def index():
                 const latest = rows[0];
                 if (lastTimestamp === null) {{
                     lastTimestamp = latest.timestamp;
+                    lastTimestampMs = new Date(latest.timestamp).getTime();
+                    updateCountdown();
                     return;
                 }}
                 if (latest.timestamp === lastTimestamp) return;
                 lastTimestamp = latest.timestamp;
+                lastTimestampMs = new Date(latest.timestamp).getTime();
 
                 revealTemperature.textContent = latest.temperature.toFixed(2);
                 revealPressure.textContent = latest.pressure.toFixed(2);
@@ -719,11 +733,13 @@ def index():
                 clearTimeout(revealTimer);
                 revealTimer = setTimeout(function () {{
                     panel.classList.remove("revealed");
+                    updateCountdown();
                 }}, 60000);
             }}
 
             checkForNewReading();
             setInterval(checkForNewReading, 20000);
+            setInterval(updateCountdown, 1000);
         }})();
     </script>
     """
