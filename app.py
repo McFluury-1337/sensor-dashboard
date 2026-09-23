@@ -9,6 +9,7 @@ from werkzeug.security import check_password_hash
 
 import config
 import db
+import notifications
 from preprocessing import normalize, standardize
 from state import classify_metric, classify_reading
 
@@ -597,6 +598,25 @@ def _valid_api_key():
     return hmac.compare_digest(provided, API_KEY or "")
 
 
+def _record_reading(temperature, pressure, vibration):
+    thresholds = db.get_thresholds()
+    previous = db.get_latest_readings(1)
+    previous_state = (
+        classify_reading(previous[0][1], previous[0][2], previous[0][3], thresholds)
+        if previous else None
+    )
+
+    timestamp = datetime.now().isoformat()
+    db.insert_reading(timestamp, temperature, pressure, vibration)
+
+    current_state = classify_reading(temperature, pressure, vibration, thresholds)
+    if notifications.is_new_fault(previous_state, current_state):
+        reason = build_state_reason(temperature, pressure, vibration, thresholds, current_state)
+        notifications.send_telegram_alert(f"Пульт мониторинга: неисправность. {reason}")
+
+    return timestamp
+
+
 def _parse_reading_payload(payload):
     if payload is None:
         return None
@@ -621,8 +641,7 @@ def create_reading():
         return jsonify({"error": "temperature, pressure and vibration must be non-negative numbers"}), 400
 
     temperature, pressure, vibration = parsed
-    timestamp = datetime.now().isoformat()
-    db.insert_reading(timestamp, temperature, pressure, vibration)
+    timestamp = _record_reading(temperature, pressure, vibration)
 
     return jsonify({
         "timestamp": timestamp,
@@ -775,8 +794,7 @@ def admin_create_reading():
         return redirect(url_for("admin"))
 
     temperature, pressure, vibration = parsed
-    timestamp = datetime.now().isoformat()
-    db.insert_reading(timestamp, temperature, pressure, vibration)
+    _record_reading(temperature, pressure, vibration)
     flash("Показание добавлено")
     return redirect(url_for("admin"))
 
