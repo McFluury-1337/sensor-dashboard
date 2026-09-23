@@ -12,34 +12,40 @@
 - pytest — тесты чистых функций (`state.py`, `preprocessing.py`), API и админки (`test_client()`) и сверка с данными НИР, зависимость только для разработки (`requirements-dev.txt`)
 - Секреты (`API_KEY`, `API_URL`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `SECRET_KEY`) — в `.env` (не в репозитории), читаются своим минимальным загрузчиком `config.py` на стандартной библиотеке
 - `werkzeug.security` (приезжает вместе с Flask) — хеширование пароля админа и сравнение при входе
-- Pico CSS 2 (classless, fluid) через CDN (`<link>` в `_page()`) — вся вёрстка на семантических тегах, без Bootstrap/Tailwind; тёмная тема с приборным акцентом переопределена через CSS-переменные Pico
+- Pico CSS 2 (classless, fluid) через CDN (`<link>` в `_page()`) — вся вёрстка на семантических тегах, без Bootstrap/Tailwind; тёмная тема переопределена через CSS-переменные Pico, включая единый `--pico-border-radius` (скругления в духе iOS по всему сайту одной переменной)
+- Google Fonts (Inter — интерфейс, JetBrains Mono — все числа/таблицы) через CDN `<link>` в `_page()`
+- Telegram Bot API — уведомление при переходе в «неисправность» (`notifications.py`), один POST через `urllib.request` (без библиотек), токен/chat_id в `.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, опционально `TELEGRAM_CHAT_ID_STAFF` — второй получатель без деталей)
 
 ## Структура
 ```
-app.py               # Flask: главная страница, API /api/readings, админка /login + /admin + /admin/logout
+app.py               # Flask: главная страница, API /api/readings(+/range,+/export.csv), админка /login + /admin + /admin/logout
 db.py                # единственный модуль работы с БД (readings + thresholds + users) — точка переезда на MySQL
 config.py            # минимальный загрузчик .env (без внешних зависимостей)
 state.py             # чистые функции определения состояния по порогам (без БД и Flask)
 preprocessing.py     # чистые функции normalize()/standardize() (без БД и Flask)
+notifications.py     # is_new_fault() + send_telegram_alert() — уведомление в Telegram при переходе в «неисправность»
 simulator.py         # генерирует одну запись показаний и отправляет POST /api/readings (не трогает БД напрямую)
 requirements.txt     # рантайм-зависимости (flask, pymysql)
 requirements-dev.txt # зависимости для разработки (pytest)
 pytest.ini           # добавляет корень проекта в PYTHONPATH для tests/
 passenger_wsgi.py    # точка входа для Phusion Passenger на хостинге (Beget)
-.env.example         # плейсхолдер для всех секретов и DB_* — реальный .env не в репозитории
-tests/               # pytest: test_state.py, test_preprocessing.py, test_against_nir.py, test_api.py, test_admin.py, test_db_mysql.py (реальная MariaDB, пропускается если её нет), conftest.py, fixtures/data_raw.csv
-harness/             # PROJECT.md и BRIEF/PLAN/REPORT по этапам (harness/stage-N/)
+.env.example         # плейсхолдер для всех секретов и DB_*/TELEGRAM_* — реальный .env не в репозитории
+tests/               # pytest: test_state.py, test_preprocessing.py, test_against_nir.py, test_api.py, test_admin.py,
+                      # test_db_mysql.py (реальная MariaDB, пропускается если её нет), test_notifications.py,
+                      # test_export.py, conftest.py, fixtures/data_raw.csv
+harness/             # PROJECT.md и BRIEF/PLAN/REPORT по этапам (harness/stage-N/, включая бонусные stage-8/stage-9)
 ```
 
 ## Ключевые модули и точки входа
 | Модуль | Где | За что отвечает |
 |--------|-----|-----------------|
-| `db.py` | `db.py` | Единственное место с SQL. Таблицы `readings`, `thresholds`, `users`. Бэкенд — SQLite или MySQL (`BACKEND`/`DB_BACKEND` в `.env`), диалект SQL — через `_sql(key)` и словари `_SQLITE_SQL`/`_MYSQL_SQL`, читается заново при каждом вызове (не один раз при импорте) — иначе `monkeypatch` в тестах не переключал бы диалект. Все функции принимают `path=None` (только для SQLite) → используют `db.DB_PATH` в момент вызова. `init_db()` сеет одного пользователя из `.env`, только если таблица `users` пуста. |
+| `db.py` | `db.py` | Единственное место с SQL. Таблицы `readings`, `thresholds`, `users`. Бэкенд — SQLite или MySQL (`BACKEND`/`DB_BACKEND` в `.env`), диалект SQL — через `_sql(key)` и словари `_SQLITE_SQL`/`_MYSQL_SQL`, читается заново при каждом вызове (не один раз при импорте) — иначе `monkeypatch` в тестах не переключал бы диалект. Все функции принимают `path=None` (только для SQLite) → используют `db.DB_PATH` в момент вызова. `init_db()` сеет одного пользователя из `.env`, только если таблица `users` пуста. `get_readings_in_range(start, end)` — для просмотра/CSV-выгрузки за период. |
 | `config.py` | `config.py` | Читает `.env` (или переменные окружения — у них приоритет) без внешних зависимостей. `config.get("API_KEY")`. |
 | `state.py` | `state.py` | `classify_metric(value, warn, fault)` — состояние одного параметра по порогам; `classify_reading(temp, pressure, vibration, thresholds)` — итоговое состояние показания, правило «худшее из трёх» (см. DECISIONS.md). Чистые функции, без БД/Flask. |
 | `preprocessing.py` | `preprocessing.py` | `normalize(values)` — приведение к [0,1]; `standardize(values)` — z-score. Чистые функции, без БД/Flask. |
+| `notifications.py` | `notifications.py` | `is_new_fault(previous_state, current_state)` — чистая функция, True только на переходе в «неисправность» (не на каждом показании в этом состоянии). `send_telegram_alert(message, chat_id=None)` — один POST на Bot API, тихий no-op без токена, не роняет вызывающий код при сетевой ошибке. |
 | `simulator.py` | `simulator.py` | Выбирает состояние, генерирует temp/pressure/vibration через `random.normalvariate` по mu/sd из НИР, отправляет `POST /api/readings` с заголовком `X-API-Key` через `urllib.request`. |
-| `app.py` | `app.py` | `/` — индикатор, график, таблицы. `POST`/`GET /api/readings` — API с ключом (см. Этап 3). `/login` — форма входа, сессия через `session`/`SECRET_KEY`. `/admin` (за `login_required`) — форма ручного ввода показания и форма правки порогов, обе пишут через `db.py`. `/admin/logout` — сброс сессии. `_page()`/`PAGE_STYLES`/`_nav_html()` — общая обёртка страниц (Pico CSS, шапка/подвал), переиспользуется всеми тремя маршрутами. |
+| `app.py` | `app.py` | `/` — индикатор+причина отклонения, гейджи по метрикам с пороговыми зонами, график (с пороговыми линиями и переключателем сырые/нормализованные/стандартизированные), таблицы, панель «Анализ показаний» (опрос `/api/readings?limit=1`, имитация загрузки), секция «Показания за период» (просмотр + CSV). `POST`/`GET /api/readings` — API с ключом (см. Этап 3). `GET /api/readings/range`, `GET /api/readings/export.csv` — выборка за период по дате+времени (JSON / CSV), публичные, без ключа. `/login` — форма входа, сессия через `session`/`SECRET_KEY`. `/admin` (за `login_required`) — форма ручного ввода показания и форма правки порогов. `/admin/logout` — сброс сессии. `_record_reading()` — общий хелпер вставки показания + триггер Telegram-уведомления, переиспользуется API и админкой. `_page()`/`PAGE_STYLES`/`_nav_html()` — общая обёртка страниц. |
 
 ## Как запустить / проверить
 ```bash
@@ -59,7 +65,8 @@ pytest                       # прогнать все тесты (логика,
 - `app.run(debug=True)` — только для разработки, для деплоя нужно будет заменить на прод-WSGI сервер.
 - `simulator.py` отправляет ровно одну запись за запуск, непрерывного сбора (цикл/планировщик) пока нет — на хостинге запускается по cron (Этап 6, Часть B).
 - MySQL-путь в `db.py` реально протестирован против локальной MariaDB (`tests/test_db_mysql.py`), но не против настоящей MySQL на Beget — первая реальная проверка будет при выкладке (Этап 6, Часть B).
-- `GET /api/readings` не защищён ключом API — осознанное решение (только читает то же, что уже открыто на `/`), см. `DECISIONS.md`.
+- `GET /api/readings`, `GET /api/readings/range`, `GET /api/readings/export.csv` не защищены ключом API — осознанное решение (только чтение того же, что уже открыто на `/`), см. `DECISIONS.md`.
+- Телефон/chat_id для Telegram-уведомлений — только в `.env` (локальном и серверном), никогда не передавались в открытом виде — если токен всё же попал в чат/лог, считать скомпрометированным и отзывать через `@BotFather` (`/revoke`).
 - Смена пароля администратора после первого посева не реализована (нет формы «сменить пароль») — при необходимости пока только через `db.upsert_user()` вручную; не требовалось по заданию Этапа 4.
 - Таблица «среднее ± σ» на сайте группирует показания по вычисленному через пороги состоянию (другого способа для реальных данных нет), поэтому её числа заметно отличаются от Таблицы 1 НИР (которая считалась по истинным меткам генерации) — см. `LESSONS.md`, запись про «худшее из трёх». Это ожидаемое поведение, не баг.
 - На macOS порт 5000 может быть занят AirPlay Receiver — см. `LESSONS.md`.
