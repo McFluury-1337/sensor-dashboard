@@ -392,6 +392,22 @@ def build_state_reason(temperature, pressure, vibration, thresholds, current_sta
     return "Причина: " + "; ".join(parts)
 
 
+def build_fault_alert_message(reason, timestamp):
+    bullets = "\n".join(
+        f"• {part}" for part in reason.removeprefix("Причина: ").split("; ")
+    )
+    time_str = timestamp.split(".")[0].replace("T", " ")
+
+    return (
+        "❗️ <b>Неисправность!</b>\n"
+        f"<i>{time_str}</i>\n\n"
+        f"{bullets}\n\n"
+        "Что делать: проверьте систему по показаниям выше, откройте "
+        '<a href="https://sensor-dashboard.ru/admin">админку</a> и при необходимости '
+        "скорректируйте пороги или устраните причину на месте."
+    )
+
+
 def build_stats_table(all_readings, thresholds):
     by_state = {"норма": {"temperature": [], "pressure": [], "vibration": []},
                 "предупреждение": {"temperature": [], "pressure": [], "vibration": []},
@@ -612,7 +628,11 @@ def _record_reading(temperature, pressure, vibration):
     current_state = classify_reading(temperature, pressure, vibration, thresholds)
     if notifications.is_new_fault(previous_state, current_state):
         reason = build_state_reason(temperature, pressure, vibration, thresholds, current_state)
-        notifications.send_telegram_alert(f"Пульт мониторинга: неисправность. {reason}")
+        notifications.send_telegram_alert(build_fault_alert_message(reason, timestamp))
+
+        staff_chat_id = config.get("TELEGRAM_CHAT_ID_STAFF")
+        if staff_chat_id:
+            notifications.send_telegram_alert("❗️ Проверьте оборудование.", chat_id=staff_chat_id)
 
     return timestamp
 

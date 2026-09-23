@@ -57,8 +57,25 @@ def test_send_telegram_alert_posts_to_correct_url(monkeypatch):
     body = json.loads(captured["data"].decode())
 
     assert captured["url"] == "https://api.telegram.org/bot123:ABC/sendMessage"
-    assert body == {"chat_id": "999", "text": "Неисправность!"}
+    assert body == {"chat_id": "999", "text": "Неисправность!", "parse_mode": "HTML"}
     assert captured["timeout"] == 5
+
+
+def test_send_telegram_alert_uses_explicit_chat_id_when_given(monkeypatch):
+    values = {"TELEGRAM_BOT_TOKEN": "123:ABC", "TELEGRAM_CHAT_ID": "999"}
+    monkeypatch.setattr(notifications.config, "get", lambda key, default=None: values.get(key, default))
+
+    captured = {}
+
+    def fake_urlopen(request, timeout=None):
+        captured["data"] = request.data
+
+    monkeypatch.setattr(notifications.urllib.request, "urlopen", fake_urlopen)
+
+    notifications.send_telegram_alert("Проверьте оборудование.", chat_id="111")
+
+    body = json.loads(captured["data"].decode())
+    assert body["chat_id"] == "111"
 
 
 def test_send_telegram_alert_swallows_network_errors(monkeypatch):
