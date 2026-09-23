@@ -1,4 +1,6 @@
+import csv
 import hmac
+import io
 import json
 import statistics as st
 from datetime import datetime
@@ -197,6 +199,27 @@ nav {
     background: var(--surface-2);
     border-color: var(--pico-muted-border-color);
     color: #e7eaee;
+}
+
+.export-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.export-form label {
+    flex: 1;
+    min-width: 140px;
+    margin-bottom: 0;
+}
+
+.export-form .table-toggle {
+    width: auto;
+    margin-top: 0;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
 }
 
 footer {
@@ -592,6 +615,12 @@ def index():
                 </table>
             </div>
             {f'<button type="button" class="table-toggle" id="recent-toggle">Показать все {len(recent)}</button>' if len(recent) > 5 else ''}
+
+            <form method="get" action="/api/readings/export.csv" class="export-form">
+                <label>С<input type="date" name="start" required></label>
+                <label>По<input type="date" name="end" required></label>
+                <button type="submit" class="table-toggle">Скачать CSV</button>
+            </form>
         </article>
     </div>
 
@@ -820,6 +849,31 @@ def list_readings():
         {"timestamp": timestamp, "temperature": temperature, "pressure": pressure, "vibration": vibration}
         for timestamp, temperature, pressure, vibration in rows
     ])
+
+
+@app.route("/api/readings/export.csv")
+def export_readings_csv():
+    start = request.args.get("start")
+    end = request.args.get("end")
+    if not start or not end:
+        return jsonify({"error": "start and end query parameters are required (YYYY-MM-DD)"}), 400
+
+    try:
+        datetime.strptime(start, "%Y-%m-%d")
+        datetime.strptime(end, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "start and end must be in YYYY-MM-DD format"}), 400
+
+    rows = db.get_readings_in_range(start, end + "T23:59:59.999999")
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["timestamp", "temperature", "pressure", "vibration"])
+    writer.writerows(rows)
+
+    response = app.response_class(output.getvalue(), mimetype="text/csv")
+    response.headers["Content-Disposition"] = f"attachment; filename=readings_{start}_{end}.csv"
+    return response
 
 
 def login_required(view):

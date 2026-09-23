@@ -169,6 +169,20 @@ def get_all_readings(path=None):
     return rows
 
 
+def get_readings_in_range(start, end, path=None):
+    conn = get_connection(path)
+    p = _sql("placeholder")
+    cursor = _execute(
+        conn,
+        f"SELECT timestamp, temperature, pressure, vibration FROM readings "
+        f"WHERE timestamp >= {p} AND timestamp <= {p} ORDER BY id ASC",
+        (start, end),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
 def get_thresholds(path=None):
     conn = get_connection(path)
     cursor = _execute(conn, "SELECT metric, warn_boundary, fault_boundary FROM thresholds")
