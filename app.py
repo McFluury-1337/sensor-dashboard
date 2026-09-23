@@ -55,6 +55,7 @@ PAGE_STYLES = """
     --pico-primary-inverse: #04141a;
     --pico-font-family-sans-serif: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     --pico-font-family-monospace: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    --pico-border-radius: 1.1rem;
     --surface: #1a1d21;
     --surface-2: #23272c;
 }
@@ -160,7 +161,7 @@ nav {
 .table-card {
     background-color: var(--pico-background-color);
     border: 1px solid var(--pico-muted-border-color);
-    border-radius: 0.5rem;
+    border-radius: 0.85rem;
     overflow: auto;
 }
 
@@ -615,14 +616,25 @@ def index():
                 </table>
             </div>
             {f'<button type="button" class="table-toggle" id="recent-toggle">Показать все {len(recent)}</button>' if len(recent) > 5 else ''}
-
-            <form method="get" action="/api/readings/export.csv" class="export-form">
-                <label>С<input type="date" name="start" required></label>
-                <label>По<input type="date" name="end" required></label>
-                <button type="submit" class="table-toggle">Скачать CSV</button>
-            </form>
         </article>
     </div>
+
+    <article id="range-panel">
+        <h2>Показания за период</h2>
+        <form id="range-form" class="export-form">
+            <label>С<input type="datetime-local" id="range-start" required></label>
+            <label>По<input type="datetime-local" id="range-end" required></label>
+            <button type="button" class="table-toggle" id="range-show">Показать</button>
+            <button type="button" class="table-toggle" id="range-download">Скачать CSV</button>
+        </form>
+        <div class="table-card" id="range-results" hidden>
+            <table>
+                <thead><tr><th>Время</th><th>Температура</th><th>Давление</th><th>Вибрация</th></tr></thead>
+                <tbody id="range-results-body"></tbody>
+            </table>
+        </div>
+        <p class="analysis-status" id="range-empty" hidden>Показаний за этот период нет.</p>
+    </article>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script>
@@ -771,6 +783,50 @@ def index():
             setInterval(updateCountdown, 1000);
         }})();
     </script>
+
+    <script>
+        (function () {{
+            const startInput = document.getElementById("range-start");
+            const endInput = document.getElementById("range-end");
+            const results = document.getElementById("range-results");
+            const resultsBody = document.getElementById("range-results-body");
+            const empty = document.getElementById("range-empty");
+
+            document.getElementById("range-show").addEventListener("click", async function () {{
+                if (!startInput.value || !endInput.value) return;
+
+                const params = "start=" + encodeURIComponent(startInput.value) + "&end=" + encodeURIComponent(endInput.value);
+                let rows;
+                try {{
+                    const response = await fetch("/api/readings/range?" + params);
+                    if (!response.ok) return;
+                    rows = await response.json();
+                }} catch (error) {{
+                    return;
+                }}
+
+                if (!rows.length) {{
+                    results.hidden = true;
+                    empty.hidden = false;
+                    return;
+                }}
+
+                empty.hidden = true;
+                resultsBody.innerHTML = rows.map(function (row) {{
+                    const time = row.timestamp.split(".")[0].replace("T", " ");
+                    return "<tr><td>" + time + "</td><td>" + row.temperature.toFixed(2) +
+                        "</td><td>" + row.pressure.toFixed(2) + "</td><td>" + row.vibration.toFixed(2) + "</td></tr>";
+                }}).join("");
+                results.hidden = false;
+            }});
+
+            document.getElementById("range-download").addEventListener("click", function () {{
+                if (!startInput.value || !endInput.value) return;
+                const params = "start=" + encodeURIComponent(startInput.value) + "&end=" + encodeURIComponent(endInput.value);
+                window.location.href = "/api/readings/export.csv?" + params;
+            }});
+        }})();
+    </script>
     """
 
     return _page("Пульт мониторинга", body)
@@ -851,28 +907,50 @@ def list_readings():
     ])
 
 
-@app.route("/api/readings/export.csv")
-def export_readings_csv():
+def _parse_range_params():
     start = request.args.get("start")
     end = request.args.get("end")
     if not start or not end:
-        return jsonify({"error": "start and end query parameters are required (YYYY-MM-DD)"}), 400
+        return None, None, (jsonify({"error": "start and end query parameters are required (YYYY-MM-DDTHH:MM)"}), 400)
 
     try:
-        datetime.strptime(start, "%Y-%m-%d")
-        datetime.strptime(end, "%Y-%m-%d")
+        datetime.strptime(start, "%Y-%m-%dT%H:%M")
+        datetime.strptime(end, "%Y-%m-%dT%H:%M")
     except ValueError:
-        return jsonify({"error": "start and end must be in YYYY-MM-DD format"}), 400
+        return None, None, (jsonify({"error": "start and end must be in YYYY-MM-DDTHH:MM format"}), 400)
 
-    rows = db.get_readings_in_range(start, end + "T23:59:59.999999")
+    return start, end, None
+
+
+@app.route("/api/readings/range")
+def readings_in_range():
+    start, end, error = _parse_range_params()
+    if error:
+        return error
+
+    rows = db.get_readings_in_range(start, end + ":59.999999")
+    return jsonify([
+        {"timestamp": timestamp, "temperature": temperature, "pressure": pressure, "vibration": vibration}
+        for timestamp, temperature, pressure, vibration in rows
+    ])
+
+
+@app.route("/api/readings/export.csv")
+def export_readings_csv():
+    start, end, error = _parse_range_params()
+    if error:
+        return error
+
+    rows = db.get_readings_in_range(start, end + ":59.999999")
 
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["timestamp", "temperature", "pressure", "vibration"])
     writer.writerows(rows)
 
+    filename = f"readings_{start}_{end}.csv".replace(":", "-")
     response = app.response_class(output.getvalue(), mimetype="text/csv")
-    response.headers["Content-Disposition"] = f"attachment; filename=readings_{start}_{end}.csv"
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
     return response
 
 
